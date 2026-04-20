@@ -1,0 +1,18 @@
+[package]
+name = "qup-embassy"
+description = "Embassy integration for QUP."
+readme = "../../README.md"
+keywords = ["protocol", "embedded", "embassy", "async"]
+categories = ["embedded", "asynchronous", "encoding"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+qup-core.workspace = true
+embassy-sync.workspace = true

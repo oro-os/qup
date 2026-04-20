@@ -1,0 +1,116 @@
+[workspace]
+members = [
+    "crates/qup-core",
+    "crates/qup-embassy",
+    "crates/qup",
+    "crates/qup-redis-bridge",
+    "crates/qup-tui",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["Joshua Lee Junon (https://github.com/qix-)"]
+repository = "https://github.com/oro-os/qup"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+qup-core = { path = "crates/qup-core" }
+qup = { path = "crates/qup" }
+embassy-sync = "0.8.0"
+redis = "1.2.0"
+clap = { version = "4.6.1", features = ["derive"] }
+ratatui = "0.30.0"
+
+[workspace.lints.rust]
+missing_docs = "warn"
+elided_lifetimes_in_paths = "deny"
+future-incompatible = "warn"
+missing-unsafe-on-extern = "warn"
+unused-lifetimes = "warn"
+unused-qualifications = "warn"
+unused-import-braces = "warn"
+variant-size-differences = "warn"
+trivial-numeric-casts = "warn"
+unit-bindings = "warn"
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.rustdoc]
+all = { level = "deny", priority = -1 }
+private_doc_tests = "allow"
+private_intra_doc_links = "allow"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+restriction = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+cargo_common_metadata = "allow"
+missing_docs_in_private_items = "warn"
+integer_division = "warn"
+module_name_repetitions = "allow"
+verbose_bit_mask = "allow"
+too_many_lines = "allow"
+missing_errors_doc = "allow"
+struct_field_names = "allow"
+items_after_statements = "allow"
+cast_possible_truncation = "allow"
+assertions_on_constants = "allow"
+new_without_default = "allow"
+needless_doctest_main = "allow"
+tabs_in_doc_comments = "allow"
+redundant_closure_for_method_calls = "allow"
+undocumented_unsafe_blocks = "deny"
+default_numeric_fallback = "allow"
+implicit_return = "allow"
+semicolon_inside_block = "warn"
+semicolon_outside_block = "allow"
+arbitrary_source_item_ordering = "allow"
+pub_use = "allow"
+self_named_module_files = "deny"
+mod_module_files = "allow"
+inline_asm_x86_intel_syntax = "allow"
+inline_asm_x86_att_syntax = "deny"
+question_mark_used = "allow"
+missing_trait_methods = "allow"
+multiple_inherent_impl = "allow"
+single_call_fn = "allow"
+cfg_not_test = "allow"
+# While useful and technically correct, highly annoying to the point of being unhelpful.
+pattern_type_mismatch = "allow"
+# Shadowing could technically present bugs, but in practice is often used for convenience
+# and due to extensive type strictness rarely causes issues. Disallowing it everywhere would
+# likely just lead to widespread use of non-ideal variable names.
+shadow_reuse = "allow"
+shadow_unrelated = "allow"
+unseparated_literal_suffix = "allow"
+separated_literal_suffix = "warn"
+pub_with_shorthand = "allow"
+pub_without_shorthand = "warn"
+field_scoped_visibility_modifiers = "allow"
+# We've tweaked them here to a decent enough extent that an appropriate level of "annoying"
+# has been achieved codebase-wide.
+blanket_clippy_restriction_lints = "allow"
+# LTO is enabled, making this a moot point.
+missing_inline_in_public_items = "allow"
+# All crates in this workspace are typically built "together" and are
+# only split out for organizational purposes. Treating each as though
+# they have a "public API" is nonsensical in our case, and the resulting
+# warnings are more noise than signal.
+exhaustive_structs = "allow"
+exhaustive_enums = "allow"
+# Similar to the above, there's no public API in the traditional sense,
+# so if an `arg: impl Foo` is insufficient, it can be changed.
+impl_trait_in_params = "allow"
+# Way too noisy, not particularly helpful. This will need some
+# judicious review otherwise, but should be manageable.
+min_ident_chars = "allow"
+# We are smart enough :)
+little_endian_bytes = "allow"
+big_endian_bytes = "allow"
+host_endian_bytes = "allow"

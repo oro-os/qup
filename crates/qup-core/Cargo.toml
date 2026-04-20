@@ -1,0 +1,20 @@
+[package]
+name = "qup-core"
+description = "Core parser and shared wire types for QUP."
+readme = "../../README.md"
+keywords = ["protocol", "binary", "embedded", "parser"]
+categories = ["embedded", "encoding", "parser-implementations"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }

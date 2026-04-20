@@ -1,0 +1,15 @@
+[package]
+name = "qup-tui"
+description = "Terminal explorer scaffold for QUP meshes."
+readme = "../../README.md"
+keywords = ["protocol", "tui", "terminal", "embedded"]
+categories = ["command-line-utilities", "visualization", "encoding"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+qup.workspace = true
+ratatui.workspace = true

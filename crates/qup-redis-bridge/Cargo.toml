@@ -1,0 +1,16 @@
+[package]
+name = "qup-redis-bridge"
+description = "Redis-backed bridge scaffold for QUP."
+readme = "../../README.md"
+keywords = ["protocol", "redis", "bridge", "binary"]
+categories = ["network-programming", "encoding", "command-line-utilities"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+qup.workspace = true
+redis.workspace = true
+clap.workspace = true
