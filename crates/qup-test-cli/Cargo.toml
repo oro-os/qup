@@ -1,0 +1,22 @@
+[package]
+name = "qup-test-cli"
+description = "Tokio-based smoke client for exercising a QUP test node."
+publish = false
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "qup-test-cli"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+clap.workspace = true
+qup-core.workspace = true
+shlex = "1"
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }

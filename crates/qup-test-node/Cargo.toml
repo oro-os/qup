@@ -1,0 +1,21 @@
+[package]
+name = "qup-test-node"
+description = "Tokio-based test node for exercising QUP clients."
+publish = false
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "qup-test-node"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+clap.workspace = true
+qup-core.workspace = true
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
