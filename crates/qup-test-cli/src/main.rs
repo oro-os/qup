@@ -157,6 +157,7 @@ impl QupClient {
 
     async fn send_frame(&mut self, opcode: Opcode, payload: &[u8]) -> io::Result<()> {
         let frame = build_frame(opcode, payload)?;
+        eprintln!("tx\t{}", format_hex_bytes(frame.as_slice()));
         self.stream.write_all(frame.as_slice()).await
     }
 
@@ -175,6 +176,8 @@ impl QupClient {
         self.frame_buf.extend_from_slice(&header);
         self.frame_buf.extend_from_slice(self.payload_buf.as_slice());
         self.frame_buf.extend_from_slice(&checksum);
+
+        eprintln!("rx\t{}", format_hex_bytes(self.frame_buf.as_slice()));
 
         let frame = self
             .parser
@@ -535,6 +538,14 @@ fn format_flags(flags: KeyFlags) -> String {
     let writable = if flags.is_writable() { 'w' } else { '-' };
     let observable = if flags.is_observable() { 'o' } else { '-' };
     format!("{readable}{writable}{observable}")
+}
+
+fn format_hex_bytes(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn format_value(value: &OwnedValue) -> String {

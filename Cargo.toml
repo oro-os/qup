@@ -3,7 +3,6 @@ members = [
     "crates/qup-core",
     "crates/qup-embassy",
     "crates/qup",
-    "crates/qup-redis-bridge",
     "crates/qup-test-cli",
     "crates/qup-test-node",
     "crates/qup-tui",
@@ -21,7 +20,6 @@ license = "MIT OR Apache-2.0"
 qup-core = { path = "crates/qup-core" }
 qup = { path = "crates/qup" }
 embassy-sync = "0.8.0"
-redis = "1.2.0"
 clap = { version = "4.6.1", features = ["derive"] }
 ratatui = "0.30.0"
 
