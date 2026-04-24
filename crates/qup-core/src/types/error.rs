@@ -10,6 +10,7 @@ use crate::types::{Opcode, WireDirection};
     variant_size_differences,
     reason = "length mismatch keeps both declared and observed lengths for diagnostics"
 )]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameError {
     /// "Every frame is self-delimiting."
@@ -67,6 +68,7 @@ impl fmt::Display for FrameError {
 }
 
 /// Payload-level violations defined by the normative specification.
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PayloadError {
     /// The payload size is not valid for the opcode-specific body.
@@ -86,7 +88,7 @@ pub enum PayloadError {
         remaining: usize,
     },
     /// "Strings MUST be valid UTF-8."
-    InvalidUtf8(Utf8Error),
+    InvalidUtf8(#[cfg_attr(feature = "defmt", defmt(Debug2Format))] Utf8Error),
     /// "Strings MUST NOT contain `0x00` anywhere."
     StringContainsNul,
     /// "`bool` values are encoded as `0x00` or `0x01`; any other value is a protocol error."

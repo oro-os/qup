@@ -146,6 +146,7 @@ pub enum WireValueRef<'a> {
 }
 
 /// Validation error for typed QUP key values.
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WireValueError {
     /// The wire value kind does not match the key type.
@@ -416,6 +417,7 @@ where
 }
 
 /// Protocol or transport failure returned by the embassy QUP server.
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug)]
 pub enum ServerError<ReadError, WriteError> {
     /// The byte source returned an error.
@@ -429,6 +431,7 @@ pub enum ServerError<ReadError, WriteError> {
 }
 
 /// Protocol-level error returned when the incoming request frame is invalid.
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProtocolError {
     /// The frame structure was invalid.

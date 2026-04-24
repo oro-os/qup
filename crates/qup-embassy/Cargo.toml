@@ -13,8 +13,13 @@ license.workspace = true
 [lib]
 path = "src/lib.rs"
 
+[features]
+default = []
+defmt = ["dep:defmt", "qup-core/defmt"]
+
 [dependencies]
 qup-core.workspace = true
 embassy-sync.workspace = true
 embassy-futures = "0.1.2"
 heapless = "0.9.2"
+defmt = { version = "1.0.1", optional = true }

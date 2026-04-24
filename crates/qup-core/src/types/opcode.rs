@@ -5,6 +5,7 @@ use core::fmt;
 use crate::types::FrameError;
 
 /// Direction of bytes on the transport.
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WireDirection {
     /// Bytes sent from a client toward a node.
@@ -42,6 +43,7 @@ pub enum OpcodeClass {
 }
 
 /// A raw opcode byte.
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Opcode(pub u8);
 
