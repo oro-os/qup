@@ -2,6 +2,4 @@
 
 mod client;
 
-pub use client::{
-	Client, ClientError, FrameDirection, KeyInfo, Message, Result, TcpClient, Value,
-};
+pub use client::{Client, ClientError, FrameDirection, KeyInfo, Message, Result, TcpClient, Value};

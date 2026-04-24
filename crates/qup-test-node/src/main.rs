@@ -28,10 +28,16 @@ use std::{
 };
 
 use clap::Parser as ClapParser;
-use qup_core::{KeyFlags, MessageRef, Opcode, Parser as FrameParser, RequestRef, ValueKind, ValueRef, compute_checksum};
+use qup_core::{
+    KeyFlags, MessageRef, Opcode, Parser as FrameParser, RequestRef, ValueKind, ValueRef,
+    compute_checksum,
+};
 use tokio::{
     io::{AsyncReadExt as _, AsyncWriteExt as _},
-    net::{TcpListener, TcpStream, tcp::{OwnedReadHalf, OwnedWriteHalf}},
+    net::{
+        TcpListener, TcpStream,
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+    },
     sync::mpsc,
     time,
 };
@@ -185,9 +191,7 @@ impl ConnectionHandle {
     }
 
     fn is_observing(&self, keyref: u16) -> bool {
-        key_mask(keyref).is_some_and(|mask| {
-            self.observed_mask.load(Ordering::SeqCst) & mask != 0
-        })
+        key_mask(keyref).is_some_and(|mask| self.observed_mask.load(Ordering::SeqCst) & mask != 0)
     }
 }
 
@@ -205,10 +209,7 @@ impl ConnectionRegistry {
         }
     }
 
-    fn register(
-        &self,
-        sender: mpsc::UnboundedSender<Vec<u8>>,
-    ) -> (u64, Arc<ConnectionHandle>) {
+    fn register(&self, sender: mpsc::UnboundedSender<Vec<u8>>) -> (u64, Arc<ConnectionHandle>) {
         let connection_id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let connection = Arc::new(ConnectionHandle::new(sender));
         recover_lock(&self.connections).insert(connection_id, Arc::clone(&connection));
@@ -535,8 +536,8 @@ async fn read_frames(
     let mut payload_buf = Vec::new();
 
     loop {
-        let Ok(Some(message)) = read_next_message(&mut reader, parser, &mut frame_buf, &mut payload_buf)
-            .await
+        let Ok(Some(message)) =
+            read_next_message(&mut reader, parser, &mut frame_buf, &mut payload_buf).await
         else {
             break;
         };
@@ -581,7 +582,10 @@ async fn read_next_message<'frame>(
         .parse_frame(qup_core::WireDirection::ClientToNode, frame_buf.as_slice())
         .map_err(|_frame_error| ())?;
 
-    frame.decode_message().map(Some).map_err(|_payload_error| ())
+    frame
+        .decode_message()
+        .map(Some)
+        .map_err(|_payload_error| ())
 }
 
 fn dispatch_message(
@@ -660,9 +664,7 @@ fn key_mask(keyref: u16) -> Option<u16> {
 }
 
 fn observable_change(keyref: u16, changed: bool) -> Option<u16> {
-    (changed
-        && key_spec(keyref)
-            .is_some_and(|spec| spec.flags & KeyFlags::OBSERVABLE != 0))
+    (changed && key_spec(keyref).is_some_and(|spec| spec.flags & KeyFlags::OBSERVABLE != 0))
         .then_some(keyref)
 }
 
@@ -782,10 +784,11 @@ fn u64_to_wire(value: u64) -> i64 {
 }
 
 fn initial_seed() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(
-        0x5eed_1234_5678_9abc,
-        |duration| duration.as_secs() ^ u64::from(duration.subsec_nanos()),
-    )
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0x5eed_1234_5678_9abc, |duration| {
+            duration.as_secs() ^ u64::from(duration.subsec_nanos())
+        })
 }
 
 const fn mix_u64(value: u64) -> u64 {

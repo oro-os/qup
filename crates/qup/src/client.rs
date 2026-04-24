@@ -6,8 +6,8 @@ use std::{
 };
 
 use qup_core::{
-    KeyFlags, MessageRef, Opcode, OrdinaryResponseRef, Parser as FrameParser, ValueKind,
-    ValueRef, WireDirection, compute_checksum,
+    KeyFlags, MessageRef, Opcode, OrdinaryResponseRef, Parser as FrameParser, ValueKind, ValueRef,
+    WireDirection, compute_checksum,
 };
 use tokio::{
     io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _},
@@ -269,16 +269,23 @@ where
 
         let payload_len = usize::from(u16::from_be_bytes([header[1], header[2]]));
         self.payload_buf.resize(payload_len, 0);
-        self.stream.read_exact(self.payload_buf.as_mut_slice()).await?;
+        self.stream
+            .read_exact(self.payload_buf.as_mut_slice())
+            .await?;
 
         let mut checksum = [0u8; 1];
         self.stream.read_exact(&mut checksum).await?;
 
         self.frame_buf.clear();
         self.frame_buf.extend_from_slice(&header);
-        self.frame_buf.extend_from_slice(self.payload_buf.as_slice());
+        self.frame_buf
+            .extend_from_slice(self.payload_buf.as_slice());
         self.frame_buf.extend_from_slice(&checksum);
-        Self::trace_frame(&mut self.frame_trace, FrameDirection::Rx, self.frame_buf.as_slice());
+        Self::trace_frame(
+            &mut self.frame_trace,
+            FrameDirection::Rx,
+            self.frame_buf.as_slice(),
+        );
 
         let frame = self
             .parser
@@ -327,7 +334,11 @@ where
         self.send_empty_request(Opcode::GETKEYTABLEN).await?;
         match self.read_request_response().await? {
             Message::KeytabLen(count) => Ok(count),
-            actual => Err(unexpected_message(Opcode::GETKEYTABLEN, "KEYTABLEN", actual)),
+            actual => Err(unexpected_message(
+                Opcode::GETKEYTABLEN,
+                "KEYTABLEN",
+                actual,
+            )),
         }
     }
 
@@ -475,8 +486,9 @@ fn unexpected_message(request: Opcode, expected: &'static str, actual: Message) 
 }
 
 fn build_frame(opcode: Opcode, payload: &[u8]) -> io::Result<Vec<u8>> {
-    let payload_len = u16::try_from(payload.len())
-        .map_err(|_conversion_error| io::Error::new(ErrorKind::InvalidInput, "payload exceeds u16 wire length"))?;
+    let payload_len = u16::try_from(payload.len()).map_err(|_conversion_error| {
+        io::Error::new(ErrorKind::InvalidInput, "payload exceeds u16 wire length")
+    })?;
     let mut frame = Vec::with_capacity(payload.len().saturating_add(4));
     frame.push(opcode.as_u8());
     frame.extend_from_slice(&payload_len.to_be_bytes());
@@ -546,8 +558,9 @@ fn push_str16(payload: &mut Vec<u8>, value: &str) -> io::Result<()> {
         ));
     }
 
-    let length = u16::try_from(value.len())
-        .map_err(|_conversion_error| io::Error::new(ErrorKind::InvalidInput, "string exceeds u16 wire length"))?;
+    let length = u16::try_from(value.len()).map_err(|_conversion_error| {
+        io::Error::new(ErrorKind::InvalidInput, "string exceeds u16 wire length")
+    })?;
     payload.extend_from_slice(&length.to_be_bytes());
     payload.extend_from_slice(value.as_bytes());
     Ok(())
@@ -604,8 +617,14 @@ mod tests {
         assert_eq!(frames.len(), 2);
         assert_eq!(frames[0].0, FrameDirection::Tx);
         assert_eq!(frames[1].0, FrameDirection::Rx);
-        assert_eq!(frames[0].1, build_frame(Opcode::PING, &[]).expect("ping frame should build"));
-        assert_eq!(frames[1].1, build_frame(Opcode::OK, &[]).expect("ok frame should build"));
+        assert_eq!(
+            frames[0].1,
+            build_frame(Opcode::PING, &[]).expect("ping frame should build")
+        );
+        assert_eq!(
+            frames[1].1,
+            build_frame(Opcode::OK, &[]).expect("ok frame should build")
+        );
         Ok(())
     }
 
@@ -613,7 +632,10 @@ mod tests {
     async fn get_by_name_fetches_key_table_then_value() -> Result<()> {
         let (client_stream, mut server_stream) = duplex(256);
         let server = tokio::spawn(async move {
-            assert_eq!(read_request(&mut server_stream).await, TestRequest::GetKeytabLen);
+            assert_eq!(
+                read_request(&mut server_stream).await,
+                TestRequest::GetKeytabLen
+            );
             write_frame(&mut server_stream, Opcode::KEYTABLEN, &[0x00, 0x01]).await;
 
             assert_eq!(

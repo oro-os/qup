@@ -209,7 +209,9 @@ async fn execute_command(client: &mut TcpClient, command: Command) -> io::Result
         }
         Command::Unobserve { key } => {
             let keyref = resolve_keyref(client, key.as_str()).await?;
-            client.send_keyref_request(Opcode::UNOBSERVE, keyref).await?;
+            client
+                .send_keyref_request(Opcode::UNOBSERVE, keyref)
+                .await?;
             let message = read_request_response(client).await?;
             print_command_message(keyref, &message);
         }

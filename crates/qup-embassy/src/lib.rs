@@ -33,8 +33,7 @@ use core::{
     cell::RefCell,
     fmt,
     marker::ConstParamTy,
-    ptr,
-    str,
+    ptr, str,
     sync::atomic::{AtomicPtr, AtomicU32, Ordering},
 };
 
@@ -44,7 +43,10 @@ use embassy_sync::{
     signal::Signal,
 };
 use heapless::String;
-use qup_core::{AsyncByteRead, AsyncByteWrite, FrameError, KeyFlags, Opcode, PayloadError, ValueKind, compute_checksum};
+use qup_core::{
+    AsyncByteRead, AsyncByteWrite, FrameError, KeyFlags, Opcode, PayloadError, ValueKind,
+    compute_checksum,
+};
 
 const BASE_CAPS: &str = "PkIiCcSsGgWwNkUk";
 const OBSERVABLE_CAPS: &str = "PkIiCcSsGgWwNkUk!";
@@ -248,7 +250,8 @@ impl<const N: usize> QupValue for String<N> {
     fn encode(&self, buffer: &mut [u8]) -> Result<usize, WireValueError> {
         Self::validate(self)?;
         buffer[0] = ValueKind::Str.as_byte();
-        let len = u16::try_from(self.len()).map_err(|_conversion_error| WireValueError::ValueTooLarge)?;
+        let len =
+            u16::try_from(self.len()).map_err(|_conversion_error| WireValueError::ValueTooLarge)?;
         write_exact(&mut buffer[1..3], &len.to_be_bytes());
         write_exact(&mut buffer[3..3 + self.len()], self.as_bytes());
         Ok(3 + self.len())
@@ -371,7 +374,11 @@ where
         value.encode(buffer)
     }
 
-    fn write_and_encode(&self, value: WireValueRef<'_>, buffer: &mut [u8]) -> Result<usize, WireValueError> {
+    fn write_and_encode(
+        &self,
+        value: WireValueRef<'_>,
+        buffer: &mut [u8],
+    ) -> Result<usize, WireValueError> {
         let decoded = T::decode(value)?;
         T::validate(&decoded)?;
 
@@ -397,8 +404,10 @@ where
 
     fn attach_notifier(&'static self, notifier: &'static NotifySignal) {
         if PERM.observable() {
-            self.notifier
-                .store((notifier as *const NotifySignal).cast_mut(), Ordering::Release);
+            self.notifier.store(
+                (notifier as *const NotifySignal).cast_mut(),
+                Ordering::Release,
+            );
         }
     }
 
@@ -449,7 +458,9 @@ pub struct Server<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usiz
     notifier: NotifySignal,
 }
 
-impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize> Server<N, MAX_STR, MAX_RESPONSE> {
+impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize>
+    Server<N, MAX_STR, MAX_RESPONSE>
+{
     /// Creates a new static embassy QUP server.
     #[must_use]
     pub const fn new(
@@ -469,7 +480,10 @@ impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize> Server<N, 
     }
 
     /// Runs the server until the transport returns an error or a protocol violation is detected.
-    pub async fn run<S>(&'static self, stream: &mut S) -> Result<(), ServerError<ReadErrorOf<S>, WriteErrorOf<S>>>
+    pub async fn run<S>(
+        &'static self,
+        stream: &mut S,
+    ) -> Result<(), ServerError<ReadErrorOf<S>, WriteErrorOf<S>>>
     where
         S: QupRead + QupWrite,
     {
@@ -583,7 +597,9 @@ impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize> Server<N, 
                     } else {
                         let len = self.keys[index]
                             .encode_current_value(response_payload)
-                            .map_err(|_error| ServerError::Internal("stored value could not be encoded"))?;
+                            .map_err(|_error| {
+                                ServerError::Internal("stored value could not be encoded")
+                            })?;
                         self.send_frame(stream, Opcode::VALUE, &response_payload[..len])
                             .await?;
                     }
@@ -603,7 +619,11 @@ impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize> Server<N, 
                                 self.send_frame(stream, Opcode::WRITTEN, &response_payload[..len])
                                     .await?;
                             }
-                            Err(WireValueError::TypeMismatch | WireValueError::ValueTooLarge | WireValueError::StringContainsNul) => {
+                            Err(
+                                WireValueError::TypeMismatch
+                                | WireValueError::ValueTooLarge
+                                | WireValueError::StringContainsNul,
+                            ) => {
                                 self.send_error(stream, ERROR_TYPE_MISMATCH).await?;
                             }
                         }
@@ -676,7 +696,11 @@ impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize> Server<N, 
         Ok(())
     }
 
-    async fn send_error<S>(&self, stream: &mut S, code: u8) -> Result<(), ServerError<ReadErrorOf<S>, WriteErrorOf<S>>>
+    async fn send_error<S>(
+        &self,
+        stream: &mut S,
+        code: u8,
+    ) -> Result<(), ServerError<ReadErrorOf<S>, WriteErrorOf<S>>>
     where
         S: QupRead + QupWrite,
     {
@@ -692,14 +716,28 @@ impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize> Server<N, 
     where
         S: QupRead + QupWrite,
     {
-        let payload_len = u16::try_from(payload.len())
-            .map_err(|_conversion_error| ServerError::Internal("response payload exceeded u16 wire length"))?;
-        let header = [opcode.as_u8(), payload_len.to_be_bytes()[0], payload_len.to_be_bytes()[1]];
+        let payload_len = u16::try_from(payload.len()).map_err(|_conversion_error| {
+            ServerError::Internal("response payload exceeded u16 wire length")
+        })?;
+        let header = [
+            opcode.as_u8(),
+            payload_len.to_be_bytes()[0],
+            payload_len.to_be_bytes()[1],
+        ];
         let checksum = [compute_checksum(opcode, payload)];
 
-        stream.write_all(&header).await.map_err(ServerError::Write)?;
-        stream.write_all(payload).await.map_err(ServerError::Write)?;
-        stream.write_all(&checksum).await.map_err(ServerError::Write)?;
+        stream
+            .write_all(&header)
+            .await
+            .map_err(ServerError::Write)?;
+        stream
+            .write_all(payload)
+            .await
+            .map_err(ServerError::Write)?;
+        stream
+            .write_all(&checksum)
+            .await
+            .map_err(ServerError::Write)?;
         Ok(())
     }
 
@@ -712,7 +750,10 @@ impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize> Server<N, 
         S: QupRead + QupWrite,
     {
         let mut header = [0u8; 3];
-        stream.read_exact(&mut header).await.map_err(ServerError::Read)?;
+        stream
+            .read_exact(&mut header)
+            .await
+            .map_err(ServerError::Read)?;
 
         let opcode = Opcode::new(header[0]);
         opcode
@@ -723,60 +764,74 @@ impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize> Server<N, 
         let mut sum = FrameSum::new(opcode, payload_len);
 
         match opcode {
-            Opcode::PING => self.read_empty_request(stream, opcode, payload_len, &mut sum, IncomingRequest::Ping).await,
+            Opcode::PING => {
+                self.read_empty_request(
+                    stream,
+                    opcode,
+                    payload_len,
+                    &mut sum,
+                    IncomingRequest::Ping,
+                )
+                .await
+            }
             Opcode::IDENTIFY => {
-                self.read_empty_request(stream, opcode, payload_len, &mut sum, IncomingRequest::Identify)
-                    .await
+                self.read_empty_request(
+                    stream,
+                    opcode,
+                    payload_len,
+                    &mut sum,
+                    IncomingRequest::Identify,
+                )
+                .await
             }
             Opcode::GETKEYTABLEN => {
-                self.read_empty_request(stream, opcode, payload_len, &mut sum, IncomingRequest::GetKeytabLen)
-                    .await
+                self.read_empty_request(
+                    stream,
+                    opcode,
+                    payload_len,
+                    &mut sum,
+                    IncomingRequest::GetKeytabLen,
+                )
+                .await
             }
             Opcode::GETCAPS => {
-                self.read_empty_request(stream, opcode, payload_len, &mut sum, IncomingRequest::GetCaps)
-                    .await
+                self.read_empty_request(
+                    stream,
+                    opcode,
+                    payload_len,
+                    &mut sum,
+                    IncomingRequest::GetCaps,
+                )
+                .await
             }
             Opcode::GETKEY => {
-                self.read_keyref_request(
-                    stream,
-                    opcode,
-                    payload_len,
-                    &mut sum,
-                    |keyref| IncomingRequest::GetKey { keyref },
-                )
-                    .await
+                self.read_keyref_request(stream, opcode, payload_len, &mut sum, |keyref| {
+                    IncomingRequest::GetKey { keyref }
+                })
+                .await
             }
             Opcode::GET => {
-                self.read_keyref_request(
-                    stream,
-                    opcode,
-                    payload_len,
-                    &mut sum,
-                    |keyref| IncomingRequest::Get { keyref },
-                )
-                    .await
+                self.read_keyref_request(stream, opcode, payload_len, &mut sum, |keyref| {
+                    IncomingRequest::Get { keyref }
+                })
+                .await
             }
             Opcode::OBSERVE => {
-                self.read_keyref_request(
-                    stream,
-                    opcode,
-                    payload_len,
-                    &mut sum,
-                    |keyref| IncomingRequest::Observe { keyref },
-                )
-                    .await
+                self.read_keyref_request(stream, opcode, payload_len, &mut sum, |keyref| {
+                    IncomingRequest::Observe { keyref }
+                })
+                .await
             }
             Opcode::UNOBSERVE => {
-                self.read_keyref_request(
-                    stream,
-                    opcode,
-                    payload_len,
-                    &mut sum,
-                    |keyref| IncomingRequest::Unobserve { keyref },
-                )
+                self.read_keyref_request(stream, opcode, payload_len, &mut sum, |keyref| {
+                    IncomingRequest::Unobserve { keyref }
+                })
+                .await
+            }
+            Opcode::WRITE => {
+                self.read_write_request(stream, payload_len, &mut sum, string_scratch)
                     .await
             }
-            Opcode::WRITE => self.read_write_request(stream, payload_len, &mut sum, string_scratch).await,
             _ => Err(ServerError::Protocol(ProtocolError::Frame(
                 FrameError::InvalidDirection {
                     opcode,
@@ -902,7 +957,7 @@ impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize> Server<N, 
                     invalid => {
                         return Err(ServerError::Protocol(ProtocolError::Payload(
                             PayloadError::InvalidBool(invalid),
-                        )))
+                        )));
                     }
                 };
                 Ok(IncomingRequest::Write {
@@ -1050,11 +1105,22 @@ enum IncomingRequest<'a> {
     Identify,
     GetCaps,
     GetKeytabLen,
-    GetKey { keyref: u16 },
-    Get { keyref: u16 },
-    Write { keyref: u16, value: WireValueRef<'a> },
-    Observe { keyref: u16 },
-    Unobserve { keyref: u16 },
+    GetKey {
+        keyref: u16,
+    },
+    Get {
+        keyref: u16,
+    },
+    Write {
+        keyref: u16,
+        value: WireValueRef<'a>,
+    },
+    Observe {
+        keyref: u16,
+    },
+    Unobserve {
+        keyref: u16,
+    },
 }
 
 #[doc(hidden)]
@@ -1066,7 +1132,11 @@ pub trait ErasedKey: Sync {
     fn generation(&self) -> u32;
     fn encode_key_payload(&self, buffer: &mut [u8]) -> usize;
     fn encode_current_value(&self, buffer: &mut [u8]) -> Result<usize, WireValueError>;
-    fn write_and_encode(&self, value: WireValueRef<'_>, buffer: &mut [u8]) -> Result<usize, WireValueError>;
+    fn write_and_encode(
+        &self,
+        value: WireValueRef<'_>,
+        buffer: &mut [u8],
+    ) -> Result<usize, WireValueError>;
     fn attach_notifier(&'static self, notifier: &'static NotifySignal);
 }
 
@@ -1102,7 +1172,11 @@ where
         self.encode_current_value(buffer)
     }
 
-    fn write_and_encode(&self, value: WireValueRef<'_>, buffer: &mut [u8]) -> Result<usize, WireValueError> {
+    fn write_and_encode(
+        &self,
+        value: WireValueRef<'_>,
+        buffer: &mut [u8],
+    ) -> Result<usize, WireValueError> {
         self.write_and_encode(value, buffer)
     }
 
@@ -1126,7 +1200,11 @@ pub mod __private {
     }
 
     pub const fn caps_wire_len(has_observable: bool) -> usize {
-        str16_wire_len(if has_observable { OBSERVABLE_CAPS } else { BASE_CAPS })
+        str16_wire_len(if has_observable {
+            OBSERVABLE_CAPS
+        } else {
+            BASE_CAPS
+        })
     }
 
     pub const fn max_usize(values: &[usize]) -> usize {
@@ -1199,7 +1277,9 @@ pub mod __private {
         PERM.observable()
     }
 
-    pub const fn erased_key<T, const PERM: Perm>(key: &'static Key<T, PERM>) -> &'static dyn ErasedKey
+    pub const fn erased_key<T, const PERM: Perm>(
+        key: &'static Key<T, PERM>,
+    ) -> &'static dyn ErasedKey
     where
         T: QupValue,
     {
@@ -1267,11 +1347,17 @@ macro_rules! __qup_count_exprs {
 }
 
 const fn assert_wire_string(value: &str) {
-    assert!(value.len() <= u16::MAX as usize, "QUP strings must fit in str16");
+    assert!(
+        value.len() <= u16::MAX as usize,
+        "QUP strings must fit in str16"
+    );
     let bytes = value.as_bytes();
     let mut index = 0usize;
     while index < bytes.len() {
-        assert!(bytes[index] != 0x00, "QUP strings must not contain NUL bytes");
+        assert!(
+            bytes[index] != 0x00,
+            "QUP strings must not contain NUL bytes"
+        );
         index += 1;
     }
 }
@@ -1337,9 +1423,13 @@ where
     S: QupRead + QupWrite,
 {
     let mut checksum = [0u8; 1];
-    stream.read_exact(&mut checksum).await.map_err(ServerError::Read)?;
+    stream
+        .read_exact(&mut checksum)
+        .await
+        .map_err(ServerError::Read)?;
     sum.add_byte(checksum[0]);
-    sum.finish().map_err(|error| ServerError::Protocol(ProtocolError::Frame(error)))
+    sum.finish()
+        .map_err(|error| ServerError::Protocol(ProtocolError::Frame(error)))
 }
 
 #[derive(Clone, Copy)]

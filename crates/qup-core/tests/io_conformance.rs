@@ -128,10 +128,7 @@ mod tests {
 
     impl AsyncByteRead for TestReader<'_> {
         type Error = TransportError;
-        fn read_exact(
-            &mut self,
-            buf: &mut [u8],
-        ) -> impl Future<Output = Result<(), Self::Error>> {
+        fn read_exact(&mut self, buf: &mut [u8]) -> impl Future<Output = Result<(), Self::Error>> {
             ready(self.copy_exact(buf))
         }
     }
