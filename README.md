@@ -1,6 +1,6 @@
 <h1 align="center">
 	<br>
-	<img width="256" src="assets/logo.png" alt="QUP logo">
+	<img width="128" src="assets/logo.png" alt="QUP logo">
 	<br>
 </h1>
 
