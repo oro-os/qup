@@ -15,3 +15,7 @@ path = "src/lib.rs"
 
 [dependencies]
 qup-core.workspace = true
+tokio = { version = "1", features = ["io-util", "net", "time"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["io-util", "macros", "rt", "time"] }

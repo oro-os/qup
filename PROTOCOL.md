@@ -740,3 +740,14 @@ This example returns request-level error code `0x02`.
 ```text
 21 00 02 00 01 DC
 ```
+
+# AI Disclosure
+
+<a href="https://daiu.org/1.0/hm-assist" style="text-decoration:none; color:inherit;">
+  <img
+    src="https://daiu.org/badge-chooser/img/daiu-hm-assist.svg"
+    alt="DAIU badge - HM · Assist"
+    style="height:32px; vertical-align:middle; margin-right:0.5rem;"
+  />
+  <span>Origin: HM · Assist - DAIU 1.0</span>
+</a>

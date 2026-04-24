@@ -17,6 +17,7 @@ workspace = true
 
 [dependencies]
 clap.workspace = true
+qup.workspace = true
 qup-core.workspace = true
 shlex = "1"
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
