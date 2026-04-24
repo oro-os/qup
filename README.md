@@ -1,7 +1,7 @@
 <h1 align="center">
 	<br>
 	<br>
-	<img width="320" src="assets/qup.png" alt="QUP logo">
+	<img width="320" src="assets/logo.png" alt="QUP logo">
 	<br>
 	<br>
 	<br>
