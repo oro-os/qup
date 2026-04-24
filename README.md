@@ -1,15 +1,10 @@
 <h1 align="center">
 	<br>
-	<br>
-	<img width="320" src="assets/logo.png" alt="QUP logo">
-	<br>
-	<br>
+	<img width="256" src="assets/logo.png" alt="QUP logo">
 	<br>
 </h1>
 
-# QUP
-
-QUP, short for Quick Universal Protocol, is a compact binary protocol for durable state, telemetry, and request/response interactions across embedded systems. It targets small devices, mixed transports, and meshes that need a shared view of state without the implementation weight of larger, more general communication stacks.
+**QUP**, short for Quick Universal Protocol, is a compact binary protocol for durable state, telemetry, and request/response interactions across embedded systems. It targets small devices, mixed transports, and meshes that need a shared view of state without the implementation weight of larger, more general communication stacks.
 
 > [!WARNING]
 > QUP is a research project. The protocol specification is being proven and tested in real hardware,
