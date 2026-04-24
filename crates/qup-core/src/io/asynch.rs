@@ -13,13 +13,8 @@ pub trait AsyncByteRead {
     /// The transport-specific read error.
     type Error;
 
-    /// The future returned by [`AsyncByteRead::read_exact`].
-    type ReadExactFuture<'a>: Future<Output = Result<(), Self::Error>>
-    where
-        Self: 'a;
-
     /// Fills the provided buffer completely or returns an underlying transport error.
-    fn read_exact<'a>(&'a mut self, buf: &'a mut [u8]) -> Self::ReadExactFuture<'a>;
+    fn read_exact(&mut self, buf: &mut [u8]) -> impl Future<Output = Result<(), Self::Error>>;
 }
 
 /// Minimal transport-independent byte writer for asynchronous QUP encoders or adapters.
@@ -27,13 +22,8 @@ pub trait AsyncByteWrite {
     /// The transport-specific write error.
     type Error;
 
-    /// The future returned by [`AsyncByteWrite::write_all`].
-    type WriteAllFuture<'a>: Future<Output = Result<(), Self::Error>>
-    where
-        Self: 'a;
-
     /// Writes the provided buffer completely or returns an underlying transport error.
-    fn write_all<'a>(&'a mut self, buf: &'a [u8]) -> Self::WriteAllFuture<'a>;
+    fn write_all(&mut self, buf: &[u8]) -> impl Future<Output = Result<(), Self::Error>>;
 }
 
 /// Errors returned while reading a frame from an asynchronous transport.
@@ -128,7 +118,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use core::future::{Ready, ready};
+    use core::future::ready;
 
     use super::{AsyncByteRead, AsyncReadFrameError, read_frame};
     use crate::types::{FrameError, Opcode, WireDirection};
@@ -156,10 +146,6 @@ mod tests {
 
     impl AsyncByteRead for AsyncSliceReader<'_> {
         type Error = TestError;
-        type ReadExactFuture<'a>
-            = Ready<Result<(), Self::Error>>
-        where
-            Self: 'a;
 
         #[expect(
             clippy::arithmetic_side_effects,
@@ -169,7 +155,7 @@ mod tests {
             clippy::indexing_slicing,
             reason = "the test reader slices verified source and destination ranges"
         )]
-        fn read_exact<'a>(&'a mut self, buf: &'a mut [u8]) -> Self::ReadExactFuture<'a> {
+        fn read_exact(&mut self, buf: &mut [u8]) -> impl Future<Output = Result<(), Self::Error>> {
             let mut written = 0usize;
             while written < buf.len() {
                 if self.cursor >= self.bytes.len() {

@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use core::future::{Ready, ready};
+    use core::future::ready;
 
     use qup_core::io::asynch::{
         AsyncByteRead, AsyncByteWrite, AsyncReadFrameError, read_frame as read_frame_async,
@@ -128,15 +128,10 @@ mod tests {
 
     impl AsyncByteRead for TestReader<'_> {
         type Error = TransportError;
-        type ReadExactFuture<'read>
-            = Ready<Result<(), Self::Error>>
-        where
-            Self: 'read;
-
-        fn read_exact<'read>(
-            &'read mut self,
-            buf: &'read mut [u8],
-        ) -> Self::ReadExactFuture<'read> {
+        fn read_exact(
+            &mut self,
+            buf: &mut [u8],
+        ) -> impl Future<Output = Result<(), Self::Error>> {
             ready(self.copy_exact(buf))
         }
     }
@@ -158,12 +153,7 @@ mod tests {
 
     impl AsyncByteWrite for TestWriter {
         type Error = TransportError;
-        type WriteAllFuture<'write>
-            = Ready<Result<(), Self::Error>>
-        where
-            Self: 'write;
-
-        fn write_all<'write>(&'write mut self, buf: &'write [u8]) -> Self::WriteAllFuture<'write> {
+        fn write_all(&mut self, buf: &[u8]) -> impl Future<Output = Result<(), Self::Error>> {
             self.written.extend_from_slice(buf);
             ready(Ok(()))
         }
