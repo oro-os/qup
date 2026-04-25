@@ -342,18 +342,14 @@ where
     pub fn try_set(&self, value: T) -> Result<bool, WireValueError> {
         T::validate(&value)?;
 
-        let mut changed = false;
-        self.value.lock(|slot| {
+        let changed = self.value.lock(|slot| {
             let mut slot = slot.borrow_mut();
-            if *slot != value {
-                *slot = value.clone();
-                changed = true;
-            }
+            let changed = *slot != value;
+            *slot = value.clone();
+            changed
         });
 
-        if changed {
-            self.notify_changed();
-        }
+        self.notify_changed();
 
         Ok(changed)
     }
@@ -377,18 +373,12 @@ where
         let decoded = T::decode(value)?;
         T::validate(&decoded)?;
 
-        let mut changed = false;
         self.value.lock(|slot| {
             let mut slot = slot.borrow_mut();
-            if *slot != decoded {
-                *slot = decoded.clone();
-                changed = true;
-            }
+            *slot = decoded.clone();
         });
 
-        if changed {
-            self.notify_changed();
-        }
+        self.notify_changed();
 
         decoded.encode(buffer)
     }
@@ -1629,7 +1619,7 @@ mod tests {
 
     use heapless::String as HeaplessString;
 
-    use super::{Key, Perm};
+    use super::{Key, Perm, WireValueRef};
 
     static TEST_KEY: Key<i64, { Perm::RN }> = Key::new("voltage", 0);
 
@@ -1668,5 +1658,35 @@ mod tests {
             let transport = NoopTransport;
             let _ = crate::run!(transport, node_id, [&TEST_KEY],);
         };
+    }
+
+    #[test]
+    fn try_set_same_value_still_advances_generation() {
+        let key = Key::<i64, { Perm::RN }>::new("voltage", 0);
+
+        assert_eq!(key.generation(), 0);
+        assert!(!key.try_set(0).expect("same-value set should be accepted"));
+        assert_eq!(key.generation(), 1);
+        assert!(!key.try_set(0).expect("same-value set should still notify"));
+        assert_eq!(key.generation(), 2);
+    }
+
+    #[test]
+    fn write_same_value_still_advances_generation() {
+        let key = Key::<i64, { Perm::RN }>::new("voltage", 0);
+        let mut buffer = [0u8; <i64 as super::QupValue>::MAX_WIRE_LEN];
+
+        assert_eq!(key.generation(), 0);
+        let encoded = key
+            .write_and_encode(WireValueRef::I64(0), &mut buffer)
+            .expect("same-value write should be accepted");
+        assert_eq!(encoded, 9);
+        assert_eq!(key.generation(), 1);
+
+        let encoded = key
+            .write_and_encode(WireValueRef::I64(0), &mut buffer)
+            .expect("same-value write should still notify");
+        assert_eq!(encoded, 9);
+        assert_eq!(key.generation(), 2);
     }
 }

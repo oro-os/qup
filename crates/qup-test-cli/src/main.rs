@@ -562,7 +562,10 @@ mod tests {
     fn format_follow_value_omits_cli_prefixes() {
         assert_eq!(format_follow_value(&Value::Bool(true)), "true");
         assert_eq!(format_follow_value(&Value::I64(42)), "42");
-        assert_eq!(format_follow_value(&Value::Str(String::from("a\nb"))), "a\\nb");
+        assert_eq!(
+            format_follow_value(&Value::Str(String::from("a\nb"))),
+            "a\\nb"
+        );
     }
 
     fn key_info(keyref: u16, keyflags: KeyFlags, name: &str) -> KeyInfo {
