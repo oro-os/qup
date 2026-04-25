@@ -75,7 +75,9 @@ Compatibility stays lightweight. Peers advertise which opcodes they understand, 
 - `qup-embassy`: Embassy-oriented embedded integration.
 - `qup`: host-side implementations and shared utilities.
 - `qup-redis-bridge`: Redis-backed QUP bridge scaffold.
-- `qup-tui`: ratatui-based mesh explorer scaffold.
+- `qup-test-cli`: Tokio-based smoke client for exercising QUP nodes.
+- `qup-test-node`: Tokio-based QUP test node with a stable mixed-permission key table.
+- `qup-test-tui`: ratatui-based live key monitor for exercising QUP nodes.
 
 ## Documentation
 

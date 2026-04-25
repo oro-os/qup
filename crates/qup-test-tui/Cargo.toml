@@ -1,0 +1,24 @@
+[package]
+name = "qup-test-tui"
+description = "ratatui-based live monitor for exercising a QUP test node."
+publish = false
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "qup-test-tui"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+clap.workspace = true
+qup.workspace = true
+qup-core.workspace = true
+ratatui.workspace = true
+crossterm = "0.29"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }

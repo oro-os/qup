@@ -4,6 +4,7 @@ members = [
     "crates/qup-embassy",
     "crates/qup",
     "crates/qup-test-cli",
+    "crates/qup-test-tui",
     "crates/qup-test-node",
 ]
 resolver = "3"
