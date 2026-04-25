@@ -280,6 +280,7 @@ where
     name: &'static str,
     keyref: u16,
     value: ValueCell<T>,
+    change_signal: NotifySignal,
     notifier: AtomicPtr<NotifySignal>,
     generation: AtomicU32,
 }
@@ -296,6 +297,7 @@ where
             name,
             keyref,
             value: BlockingMutex::new(RefCell::new(T::DEFAULT)),
+            change_signal: Signal::new(),
             notifier: AtomicPtr::new(ptr::null_mut()),
             generation: AtomicU32::new(0),
         }
@@ -309,6 +311,7 @@ where
             name,
             keyref,
             value: BlockingMutex::new(RefCell::new(value)),
+            change_signal: Signal::new(),
             notifier: AtomicPtr::new(ptr::null_mut()),
             generation: AtomicU32::new(0),
         }
@@ -360,6 +363,31 @@ where
             .unwrap_or_else(|error| panic!("invalid QUP key value: {error}"));
     }
 
+    /// Waits for the next accepted update and returns the stored value after it lands.
+    pub async fn next(&self) -> T {
+        let observed_generation = self.generation();
+
+        loop {
+            self.change_signal.wait().await;
+            if self.generation() != observed_generation {
+                return self.get();
+            }
+        }
+    }
+
+    /// Waits until the key is set to `expected`.
+    pub async fn wait_for(&self, expected: &T)
+    where
+        T: PartialEq,
+    {
+        loop {
+            let value = self.next().await;
+            if &value == expected {
+                return;
+            }
+        }
+    }
+
     fn encode_current_value(&self, buffer: &mut [u8]) -> Result<usize, WireValueError> {
         let value = self.get();
         value.encode(buffer)
@@ -397,11 +425,12 @@ where
     }
 
     fn notify_changed(&self) {
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        self.change_signal.signal(());
+
         if !PERM.observable() {
             return;
         }
-
-        self.generation.fetch_add(1, Ordering::AcqRel);
 
         let notifier = self.notifier.load(Ordering::Acquire);
         if !notifier.is_null() {
@@ -1615,7 +1644,11 @@ impl Utf8StreamValidator {
 
 #[cfg(test)]
 mod tests {
-    use core::future::ready;
+    use core::{
+        future::{Future, ready},
+        pin::pin,
+        task::{Context, Poll, Waker},
+    };
 
     use heapless::String as HeaplessString;
 
@@ -1688,5 +1721,38 @@ mod tests {
             .expect("same-value write should still notify");
         assert_eq!(encoded, 9);
         assert_eq!(key.generation(), 2);
+    }
+
+    #[test]
+    fn next_resolves_after_same_value_set_without_observable_perm() {
+        let key = Key::<i64, { Perm::W }>::new("voltage", 0);
+        let mut next = pin!(key.next());
+
+        assert!(poll_once(next.as_mut()).is_pending());
+        key.set(0);
+        assert_eq!(poll_once(next.as_mut()), Poll::Ready(0));
+    }
+
+    #[test]
+    fn wait_for_loops_until_expected_value_arrives() {
+        let key = Key::<i64, { Perm::None }>::new("voltage", 0);
+        let mut wait_for = pin!(key.wait_for(&2));
+
+        assert!(poll_once(wait_for.as_mut()).is_pending());
+
+        key.set(1);
+        assert!(poll_once(wait_for.as_mut()).is_pending());
+
+        key.set(2);
+        assert_eq!(poll_once(wait_for.as_mut()), Poll::Ready(()));
+    }
+
+    fn poll_once<F>(future: core::pin::Pin<&mut F>) -> Poll<F::Output>
+    where
+        F: Future,
+    {
+        let waker = Waker::noop();
+        let mut context = Context::from_waker(waker);
+        future.poll(&mut context)
     }
 }
