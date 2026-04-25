@@ -73,6 +73,7 @@ Compatibility stays lightweight. Peers advertise which opcodes they understand, 
 
 - `qup-core`: shared wire types and parser scaffolding.
 - `qup-embassy`: Embassy-oriented embedded integration.
+- `qup-embassy-proc`: derive macros for `qup-embassy` value types.
 - `qup`: host-side implementations and shared utilities.
 - `qup-redis-bridge`: Redis-backed QUP bridge scaffold.
 - `qup-test-cli`: Tokio-based smoke client for exercising QUP nodes.

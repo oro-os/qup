@@ -29,6 +29,8 @@
 #![allow(incomplete_features)]
 #![feature(adt_const_params)]
 
+extern crate self as qup_embassy;
+
 use core::{
     cell::RefCell,
     fmt,
@@ -47,6 +49,10 @@ use qup_core::{
     AsyncByteRead, AsyncByteWrite, FrameError, KeyFlags, Opcode, PayloadError, ValueKind,
     compute_checksum,
 };
+
+/// Derive macro for unit enums that travel over QUP as strings.
+#[cfg(feature = "macros")]
+pub use qup_embassy_proc::Value;
 
 const BASE_CAPS: &str = "PkIiCcSsGgWwNkUk";
 const OBSERVABLE_CAPS: &str = "PkIiCcSsGgWwNkUk!";
@@ -1310,7 +1316,7 @@ where
 
 #[doc(hidden)]
 pub mod __private {
-    use super::{DEFAULT_NODE_ID, Key, Perm, QupValue};
+    use super::{DEFAULT_NODE_ID, Key, Perm, QupValue, WireValueError, write_exact};
 
     pub use super::ErasedKey;
 
@@ -1399,6 +1405,19 @@ pub mod __private {
         T: QupValue,
     {
         key
+    }
+
+    pub fn encode_str_value(value: &str, buffer: &mut [u8]) -> Result<usize, WireValueError> {
+        if value.as_bytes().contains(&0x00) {
+            return Err(WireValueError::StringContainsNul);
+        }
+
+        let len = u16::try_from(value.len())
+            .map_err(|_conversion_error| WireValueError::ValueTooLarge)?;
+        buffer[0] = qup_core::ValueKind::Str.as_byte();
+        write_exact(&mut buffer[1..3], &len.to_be_bytes());
+        write_exact(&mut buffer[3..3 + value.len()], value.as_bytes());
+        Ok(3 + value.len())
     }
 }
 
@@ -1654,7 +1673,20 @@ mod tests {
 
     use super::{Key, Perm, WireValueRef};
 
+    #[cfg(feature = "macros")]
+    use super::{QupValue, WireValueError};
+
     static TEST_KEY: Key<i64, { Perm::RN }> = Key::new("voltage", 0);
+
+    #[cfg(feature = "macros")]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, qup_embassy::Value)]
+    enum VbusMode {
+        Off,
+        On,
+        #[qup(name = "partial")]
+        EnablePartial,
+        Full,
+    }
 
     struct NoopTransport;
 
@@ -1745,6 +1777,59 @@ mod tests {
 
         key.set(2);
         assert_eq!(poll_once(wait_for.as_mut()), Poll::Ready(()));
+    }
+
+    #[cfg(feature = "macros")]
+    #[test]
+    fn derived_value_round_trips_using_wire_names() {
+        let mut buffer = [0u8; <VbusMode as QupValue>::MAX_WIRE_LEN];
+
+        let encoded = VbusMode::EnablePartial
+            .encode(&mut buffer)
+            .expect("derived enum should encode");
+
+        assert_eq!(encoded, 10);
+        assert_eq!(buffer[0], qup_core::ValueKind::Str.as_byte());
+        assert_eq!(&buffer[1..3], &7u16.to_be_bytes());
+        assert_eq!(&buffer[3..encoded], b"partial");
+
+        assert_eq!(
+            <VbusMode as QupValue>::decode(WireValueRef::Str("off"))
+                .expect("known string should decode"),
+            VbusMode::Off
+        );
+        assert_eq!(
+            <VbusMode as QupValue>::decode(WireValueRef::Str("full"))
+                .expect("known string should decode"),
+            VbusMode::Full
+        );
+    }
+
+    #[cfg(feature = "macros")]
+    #[test]
+    fn derived_value_rejects_unknown_or_wrongly_typed_inputs() {
+        assert_eq!(
+            <VbusMode as QupValue>::decode(WireValueRef::Str("enable_partial")),
+            Err(WireValueError::TypeMismatch)
+        );
+        assert_eq!(
+            <VbusMode as QupValue>::decode(WireValueRef::Str("wkjsasf")),
+            Err(WireValueError::TypeMismatch)
+        );
+        assert_eq!(
+            <VbusMode as QupValue>::decode(WireValueRef::Bool(true)),
+            Err(WireValueError::TypeMismatch)
+        );
+    }
+
+    #[cfg(feature = "macros")]
+    #[test]
+    fn derived_value_can_back_keys_with_default_first_variant() {
+        let key = Key::<VbusMode, { Perm::RWN }>::new("vbus_mode", 0);
+
+        assert_eq!(key.get(), VbusMode::Off);
+        key.set(VbusMode::Full);
+        assert_eq!(key.get(), VbusMode::Full);
     }
 
     fn poll_once<F>(future: core::pin::Pin<&mut F>) -> Poll<F::Output>

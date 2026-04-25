@@ -2,6 +2,7 @@
 members = [
     "crates/qup-core",
     "crates/qup-embassy",
+    "crates/qup-embassy-proc",
     "crates/qup",
     "crates/qup-test-cli",
     "crates/qup-test-tui",

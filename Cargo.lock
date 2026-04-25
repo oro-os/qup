@@ -1146,6 +1146,17 @@ dependencies = [
  "embassy-sync",
  "heapless",
  "qup-core",
+ "qup-embassy-proc",
+]
+
+[[package]]
+name = "qup-embassy-proc"
+version = "0.1.0"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
