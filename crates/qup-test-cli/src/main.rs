@@ -32,6 +32,8 @@ use qup_core::{KeyFlags, Opcode};
 struct Args {
     #[arg(short = 'a', long = "addr", default_value = "127.0.0.1:3400")]
     addr: String,
+    #[arg(short = 'f', long = "follow", value_name = "KEY")]
+    follow: Option<String>,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -89,16 +91,38 @@ enum ValueInputKind {
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let args = Args::parse();
+    validate_args(&args).unwrap_or_else(|error| error.exit());
+    let follow_key = args.follow.as_deref();
 
-    println!("connecting to {}", args.addr);
+    if follow_key.is_none() {
+        println!("connecting to {}", args.addr);
+    }
     let mut client: TcpClient = Client::connect(args.addr.as_str()).await?;
-    install_frame_trace(&mut client);
+    if follow_key.is_none() {
+        install_frame_trace(&mut client);
+    }
+
+    if let Some(key_name) = follow_key {
+        run_follow_mode(&mut client, key_name).await?;
+        return Ok(());
+    }
 
     match args.command {
         Some(Command::Repl) | None => run_repl(&mut client).await?,
         Some(command) => {
             let _keep_running = execute_command(&mut client, command).await?;
         }
+    }
+
+    Ok(())
+}
+
+fn validate_args(args: &Args) -> Result<(), clap::Error> {
+    if args.follow.is_some() && args.command.is_some() {
+        return Err(Args::command().error(
+            clap::error::ErrorKind::ArgumentConflict,
+            "--follow cannot be used with a subcommand",
+        ));
     }
 
     Ok(())
@@ -151,6 +175,30 @@ async fn run_repl(client: &mut TcpClient) -> io::Result<()> {
     }
 
     Ok(())
+}
+
+async fn run_follow_mode(client: &mut TcpClient, key_name: &str) -> io::Result<()> {
+    let key = resolve_follow_key(client, key_name).await?;
+    client.observe(key.keyref).await.map_err(client_error)?;
+
+    loop {
+        match client.next_message().await.map_err(client_error)? {
+            Message::Changed(keyref) if keyref == key.keyref => {
+                let value = client.get(key.keyref).await.map_err(client_error)?;
+                println!("{}", format_follow_value(&value));
+            }
+            Message::Changed(_) => {}
+            message => {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    format!(
+                        "expected CHANGED for key {} while following {:?}, got {message:?}",
+                        key.keyref, key.name
+                    ),
+                ));
+            }
+        }
+    }
 }
 
 #[expect(
@@ -259,6 +307,41 @@ async fn resolve_keyref(client: &mut TcpClient, selector: &str) -> io::Result<u1
         .resolve_keyref_by_name(selector)
         .await
         .map_err(client_error)
+}
+
+async fn resolve_follow_key(client: &mut TcpClient, key_name: &str) -> io::Result<KeyInfo> {
+    let keys = client.list_keys().await.map_err(client_error)?;
+    select_follow_key(keys.as_slice(), key_name)
+}
+
+fn select_follow_key(keys: &[KeyInfo], key_name: &str) -> io::Result<KeyInfo> {
+    let mut matches = keys.iter().filter(|key| key.name == key_name);
+
+    let Some(key) = matches.next() else {
+        return Err(io::Error::new(
+            ErrorKind::NotFound,
+            format!("no key named {key_name:?} in key table"),
+        ));
+    };
+
+    if matches.next().is_some() {
+        return Err(io::Error::new(
+            ErrorKind::InvalidInput,
+            format!("multiple keys named {key_name:?}; use a numeric keyref"),
+        ));
+    }
+
+    if !key.keyflags.is_readable() || !key.keyflags.is_observable() {
+        return Err(io::Error::new(
+            ErrorKind::PermissionDenied,
+            format!(
+                "key {key_name:?} must be R/N (readable and observable); flags are {}",
+                format_flags(key.keyflags)
+            ),
+        ));
+    }
+
+    Ok(key.clone())
 }
 
 fn parse_repl_command(line: &str) -> io::Result<Command> {
@@ -405,6 +488,14 @@ fn format_value(value: &Value) -> String {
     }
 }
 
+fn format_follow_value(value: &Value) -> String {
+    match value {
+        Value::Bool(value) => value.to_string(),
+        Value::I64(value) => value.to_string(),
+        Value::Str(value) => value.escape_debug().to_string(),
+    }
+}
+
 fn client_error(error: ClientError) -> io::Error {
     match error {
         ClientError::Io(error) => error,
@@ -424,5 +515,75 @@ fn client_error(error: ClientError) -> io::Error {
             ErrorKind::InvalidInput,
             format!("multiple keys named {name:?}; use a numeric keyref"),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Args, format_follow_value, select_follow_key, validate_args};
+    use clap::Parser as _;
+    use qup::{KeyInfo, Value};
+    use qup_core::KeyFlags;
+    use std::io::ErrorKind;
+
+    #[test]
+    fn validate_args_rejects_follow_with_subcommand() {
+        let args = Args::try_parse_from(["qup-test-cli", "--follow", "voltage", "ping"])
+            .expect("args should parse before semantic validation");
+
+        let error = validate_args(&args).expect_err("follow plus subcommand should fail");
+        assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn select_follow_key_accepts_readable_observable_key() {
+        let keys = [key_info(3, key_flags(true, false, true), "voltage")];
+
+        let key = select_follow_key(&keys, "voltage").expect("follow key should resolve");
+        assert_eq!(key.keyref, 3);
+        assert_eq!(key.name, "voltage");
+    }
+
+    #[test]
+    fn select_follow_key_rejects_non_observable_key() {
+        let keys = [key_info(7, key_flags(true, false, false), "voltage")];
+
+        let error = select_follow_key(&keys, "voltage").expect_err("non-R/N key should fail");
+        assert_eq!(error.kind(), ErrorKind::PermissionDenied);
+        assert!(
+            error
+                .to_string()
+                .contains("must be R/N (readable and observable)"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn format_follow_value_omits_cli_prefixes() {
+        assert_eq!(format_follow_value(&Value::Bool(true)), "true");
+        assert_eq!(format_follow_value(&Value::I64(42)), "42");
+        assert_eq!(format_follow_value(&Value::Str(String::from("a\nb"))), "a\\nb");
+    }
+
+    fn key_info(keyref: u16, keyflags: KeyFlags, name: &str) -> KeyInfo {
+        KeyInfo {
+            keyref,
+            keyflags,
+            name: name.to_owned(),
+        }
+    }
+
+    fn key_flags(readable: bool, writable: bool, observable: bool) -> KeyFlags {
+        let mut bits = 0;
+        if readable {
+            bits |= KeyFlags::READABLE;
+        }
+        if writable {
+            bits |= KeyFlags::WRITABLE;
+        }
+        if observable {
+            bits |= KeyFlags::OBSERVABLE;
+        }
+        KeyFlags::new(bits).expect("test key flags should be valid")
     }
 }
