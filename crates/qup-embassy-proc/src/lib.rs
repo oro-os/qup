@@ -50,7 +50,24 @@ fn build_enum_impl(input: &DeriveInput, enum_data: &DataEnum) -> Result<TokenStr
         .map(|variant| parse_variant(variant, &mut seen_wire_names))
         .collect::<Result<Vec<_>>>()?;
 
-    let default_variant = &variants[0].ident;
+    let mut default_variant = &variants[0].ident;
+    let mut found_explicit_default = false;
+    for variant in &variants {
+        if !variant.is_default {
+            continue;
+        }
+
+        if found_explicit_default {
+            return Err(Error::new_spanned(
+                &variant.ident,
+                "multiple `#[qup(default)]` variants are not allowed",
+            ));
+        }
+
+        default_variant = &variant.ident;
+        found_explicit_default = true;
+    }
+
     let max_wire_len = variants
         .iter()
         .map(|variant| variant.wire_name.value().len())
@@ -121,7 +138,8 @@ fn parse_variant(
         ));
     }
 
-    let wire_name = parse_wire_name(variant)?;
+    let attributes = parse_variant_attributes(variant)?;
+    let wire_name = attributes.wire_name;
     let wire_name_value = wire_name.value();
     if !seen_wire_names.insert(wire_name_value.clone()) {
         return Err(Error::new_spanned(
@@ -133,11 +151,13 @@ fn parse_variant(
     Ok(ParsedVariant {
         ident: variant.ident.clone(),
         wire_name,
+        is_default: attributes.is_default,
     })
 }
 
-fn parse_wire_name(variant: &Variant) -> Result<LitStr> {
+fn parse_variant_attributes(variant: &Variant) -> Result<ParsedAttributes> {
     let mut override_name = None;
+    let mut is_default = false;
     for attr in &variant.attrs {
         if !attr.path().is_ident("qup") {
             continue;
@@ -154,7 +174,19 @@ fn parse_wire_name(variant: &Variant) -> Result<LitStr> {
                 return Ok(());
             }
 
-            Err(meta.error("unsupported qup attribute; expected `name = \"...\"`"))
+            if meta.path.is_ident("default") {
+                if meta.input.peek(syn::Token![=]) {
+                    return Err(meta.error("`default` does not take a value"));
+                }
+                if is_default {
+                    return Err(meta.error("duplicate `default` attribute"));
+                }
+
+                is_default = true;
+                return Ok(());
+            }
+
+            Err(meta.error("unsupported qup attribute; expected `default` and/or `name = \"...\"`"))
         })?;
     }
 
@@ -165,7 +197,10 @@ fn parse_wire_name(variant: &Variant) -> Result<LitStr> {
         )
     });
     validate_wire_name(&wire_name)?;
-    Ok(wire_name)
+    Ok(ParsedAttributes {
+        wire_name,
+        is_default,
+    })
 }
 
 fn validate_wire_name(wire_name: &LitStr) -> Result<()> {
@@ -194,6 +229,12 @@ fn validate_wire_name(wire_name: &LitStr) -> Result<()> {
 struct ParsedVariant {
     ident: syn::Ident,
     wire_name: LitStr,
+    is_default: bool,
+}
+
+struct ParsedAttributes {
+    wire_name: LitStr,
+    is_default: bool,
 }
 
 #[cfg(test)]
@@ -243,6 +284,25 @@ mod tests {
     }
 
     #[test]
+    fn rejects_multiple_default_variants() {
+        let input = parse_quote! {
+            enum Nope {
+                #[qup(default)]
+                FirstValue,
+                #[qup(default)]
+                SecondValue,
+            }
+        };
+
+        let error = expand_value_derive(&input).expect_err("multiple defaults should fail");
+        assert!(
+            error
+                .to_string()
+                .contains("multiple `#[qup(default)]` variants are not allowed")
+        );
+    }
+
+    #[test]
     fn emits_snake_case_and_manual_override_names() {
         let input = parse_quote! {
             enum VbusMode {
@@ -258,6 +318,26 @@ mod tests {
 
         assert!(expanded.contains("const DEFAULT : Self = Self :: Off"));
         assert!(expanded.contains("\"off\""));
+        assert!(expanded.contains("\"partial\""));
+    }
+
+    #[test]
+    fn emits_explicit_default_variant_with_combined_qup_attr() {
+        let input = parse_quote! {
+            enum VbusMode {
+                Off,
+                On,
+                #[qup(default, name = "partial")]
+                EnablePartial,
+                Full,
+            }
+        };
+
+        let expanded = expand_value_derive(&input)
+            .expect("unit enums should derive")
+            .to_string();
+
+        assert!(expanded.contains("const DEFAULT : Self = Self :: EnablePartial"));
         assert!(expanded.contains("\"partial\""));
     }
 }

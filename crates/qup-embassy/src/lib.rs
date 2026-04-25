@@ -1683,7 +1683,7 @@ mod tests {
     enum VbusMode {
         Off,
         On,
-        #[qup(name = "partial")]
+        #[qup(default, name = "partial")]
         EnablePartial,
         Full,
     }
@@ -1824,10 +1824,10 @@ mod tests {
 
     #[cfg(feature = "macros")]
     #[test]
-    fn derived_value_can_back_keys_with_default_first_variant() {
+    fn derived_value_can_back_keys_with_marked_default_variant() {
         let key = Key::<VbusMode, { Perm::RWN }>::new("vbus_mode", 0);
 
-        assert_eq!(key.get(), VbusMode::Off);
+        assert_eq!(key.get(), VbusMode::EnablePartial);
         key.set(VbusMode::Full);
         assert_eq!(key.get(), VbusMode::Full);
     }
