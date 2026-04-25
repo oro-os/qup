@@ -364,11 +364,6 @@ where
             .unwrap_or_else(|error| panic!("invalid QUP key value: {error}"));
     }
 
-    fn encode_key_payload(&self, buffer: &mut [u8]) -> usize {
-        buffer[0] = PERM.flags_bits();
-        1 + encode_str16_into(self.name, &mut buffer[1..])
-    }
-
     fn encode_current_value(&self, buffer: &mut [u8]) -> Result<usize, WireValueError> {
         let value = self.get();
         value.encode(buffer)
@@ -451,8 +446,6 @@ pub enum ProtocolError {
 
 /// A static embassy QUP server over a fixed key registry.
 pub struct Server<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize> {
-    node_id: &'static str,
-    key_count: u16,
     has_observable_keys: bool,
     keys: [&'static dyn ErasedKey; N],
     notifier: NotifySignal,
@@ -463,16 +456,8 @@ impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize>
 {
     /// Creates a new static embassy QUP server.
     #[must_use]
-    pub const fn new(
-        node_id: &'static str,
-        key_count: u16,
-        has_observable_keys: bool,
-        keys: [&'static dyn ErasedKey; N],
-    ) -> Self {
-        assert_wire_string(node_id);
+    pub const fn new(has_observable_keys: bool, keys: [&'static dyn ErasedKey; N]) -> Self {
         Self {
-            node_id,
-            key_count,
             has_observable_keys,
             keys,
             notifier: Signal::new(),
@@ -480,13 +465,18 @@ impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize>
     }
 
     /// Runs the server until the transport returns an error or a protocol violation is detected.
-    pub async fn run<S>(
+    pub async fn run<S, ID>(
         &'static self,
         stream: &mut S,
+        node_id: ID,
     ) -> Result<(), ServerError<ReadErrorOf<S>, WriteErrorOf<S>>>
     where
         S: QupRead + QupWrite,
+        ID: AsRef<str>,
     {
+        let node_id = node_id.as_ref();
+        validate_wire_string(node_id).map_err(ServerError::Internal)?;
+
         self.attach_notifiers();
         self.debug_assert_unique_keyrefs();
 
@@ -506,6 +496,7 @@ impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize>
                     Either::First(request) => {
                         self.handle_request(
                             stream,
+                            node_id,
                             request?,
                             &mut observed,
                             &mut seen_generation,
@@ -534,6 +525,7 @@ impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize>
                 let request = self.read_request(stream, &mut string_scratch).await?;
                 self.handle_request(
                     stream,
+                    node_id,
                     request,
                     &mut observed,
                     &mut seen_generation,
@@ -547,6 +539,7 @@ impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize>
     async fn handle_request<S>(
         &self,
         stream: &mut S,
+        node_id: &str,
         request: IncomingRequest<'_>,
         observed: &mut [bool; N],
         seen_generation: &mut [u32; N],
@@ -560,36 +553,29 @@ impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize>
                 self.send_frame(stream, Opcode::OK, &[]).await?;
             }
             IncomingRequest::Identify => {
-                let len = encode_str16_into(self.node_id, response_payload);
-                self.send_frame(stream, Opcode::IDENTIFIED, &response_payload[..len])
+                self.send_str16_response(stream, Opcode::IDENTIFIED, node_id)
                     .await?;
             }
             IncomingRequest::GetCaps => {
-                let len = encode_str16_into(self.caps(), response_payload);
-                self.send_frame(stream, Opcode::CAPS, &response_payload[..len])
+                self.send_str16_response(stream, Opcode::CAPS, self.caps())
                     .await?;
             }
             IncomingRequest::GetKeytabLen => {
-                write_exact(response_payload, &self.key_count.to_be_bytes());
+                write_exact(response_payload, &self.key_count().to_be_bytes());
                 self.send_frame(stream, Opcode::KEYTABLEN, &response_payload[..2])
                     .await?;
             }
             IncomingRequest::GetKey { keyref } => {
-                if keyref >= self.key_count {
+                if keyref >= self.key_count() {
                     self.send_error(stream, ERROR_UNKNOWN_KEYREF).await?;
                 } else if let Some(index) = self.find_slot(keyref) {
-                    let len = self.keys[index].encode_key_payload(response_payload);
-                    self.send_frame(stream, Opcode::KEY, &response_payload[..len])
-                        .await?;
+                    self.send_key_response(stream, self.keys[index]).await?;
                 } else {
-                    response_payload[0] = 0;
-                    let len = 1 + encode_str16_into("", &mut response_payload[1..]);
-                    self.send_frame(stream, Opcode::KEY, &response_payload[..len])
-                        .await?;
+                    self.send_void_key_response(stream).await?;
                 }
             }
             IncomingRequest::Get { keyref } => {
-                if keyref >= self.key_count {
+                if keyref >= self.key_count() {
                     self.send_error(stream, ERROR_UNKNOWN_KEYREF).await?;
                 } else if let Some(index) = self.find_slot(keyref) {
                     if !self.keys[index].readable() {
@@ -608,7 +594,7 @@ impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize>
                 }
             }
             IncomingRequest::Write { keyref, value } => {
-                if keyref >= self.key_count {
+                if keyref >= self.key_count() {
                     self.send_error(stream, ERROR_UNKNOWN_KEYREF).await?;
                 } else if let Some(index) = self.find_slot(keyref) {
                     if !self.keys[index].writable() {
@@ -633,7 +619,7 @@ impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize>
                 }
             }
             IncomingRequest::Observe { keyref } => {
-                if keyref >= self.key_count {
+                if keyref >= self.key_count() {
                     self.send_error(stream, ERROR_UNKNOWN_KEYREF).await?;
                 } else if let Some(index) = self.find_slot(keyref) {
                     if !self.keys[index].observable() {
@@ -648,7 +634,7 @@ impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize>
                 }
             }
             IncomingRequest::Unobserve { keyref } => {
-                if keyref >= self.key_count {
+                if keyref >= self.key_count() {
                     self.send_error(stream, ERROR_UNKNOWN_KEYREF).await?;
                 } else {
                     if let Some(index) = self.find_slot(keyref) {
@@ -705,6 +691,113 @@ impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize>
         S: QupRead + QupWrite,
     {
         self.send_frame(stream, Opcode::ERROR, &[code]).await
+    }
+
+    async fn send_str16_response<S>(
+        &self,
+        stream: &mut S,
+        opcode: Opcode,
+        value: &str,
+    ) -> Result<(), ServerError<ReadErrorOf<S>, WriteErrorOf<S>>>
+    where
+        S: QupRead + QupWrite,
+    {
+        let string_len = u16::try_from(value.len()).map_err(|_conversion_error| {
+            ServerError::Internal("response string exceeded u16 wire length")
+        })?;
+        let payload_len = string_len.checked_add(2).ok_or(ServerError::Internal(
+            "response string exceeded u16 wire length",
+        ))?;
+        let payload_len_bytes = payload_len.to_be_bytes();
+        let string_len_bytes = string_len.to_be_bytes();
+        let value_bytes = value.as_bytes();
+
+        let header = [opcode.as_u8(), payload_len_bytes[0], payload_len_bytes[1]];
+        let checksum = [compute_segmented_checksum(
+            opcode,
+            &[&string_len_bytes, value_bytes],
+        )];
+
+        stream
+            .write_all(&header)
+            .await
+            .map_err(ServerError::Write)?;
+        stream
+            .write_all(&string_len_bytes)
+            .await
+            .map_err(ServerError::Write)?;
+        stream
+            .write_all(value_bytes)
+            .await
+            .map_err(ServerError::Write)?;
+        stream
+            .write_all(&checksum)
+            .await
+            .map_err(ServerError::Write)?;
+        Ok(())
+    }
+
+    async fn send_key_response<S>(
+        &self,
+        stream: &mut S,
+        key: &'static dyn ErasedKey,
+    ) -> Result<(), ServerError<ReadErrorOf<S>, WriteErrorOf<S>>>
+    where
+        S: QupRead + QupWrite,
+    {
+        let name = key.name();
+        let string_len = u16::try_from(name.len()).map_err(|_conversion_error| {
+            ServerError::Internal("key name exceeded u16 wire length")
+        })?;
+        let payload_len = string_len
+            .checked_add(3)
+            .ok_or(ServerError::Internal("key name exceeded u16 wire length"))?;
+        let payload_len_bytes = payload_len.to_be_bytes();
+        let keyflags = [key.keyflags()];
+        let string_len_bytes = string_len.to_be_bytes();
+        let name_bytes = name.as_bytes();
+        let checksum = [compute_segmented_checksum(
+            Opcode::KEY,
+            &[&keyflags, &string_len_bytes, name_bytes],
+        )];
+        let header = [
+            Opcode::KEY.as_u8(),
+            payload_len_bytes[0],
+            payload_len_bytes[1],
+        ];
+
+        stream
+            .write_all(&header)
+            .await
+            .map_err(ServerError::Write)?;
+        stream
+            .write_all(&keyflags)
+            .await
+            .map_err(ServerError::Write)?;
+        stream
+            .write_all(&string_len_bytes)
+            .await
+            .map_err(ServerError::Write)?;
+        stream
+            .write_all(name_bytes)
+            .await
+            .map_err(ServerError::Write)?;
+        stream
+            .write_all(&checksum)
+            .await
+            .map_err(ServerError::Write)?;
+        Ok(())
+    }
+
+    async fn send_void_key_response<S>(
+        &self,
+        stream: &mut S,
+    ) -> Result<(), ServerError<ReadErrorOf<S>, WriteErrorOf<S>>>
+    where
+        S: QupRead + QupWrite,
+    {
+        let payload = [0x00, 0x00, 0x00];
+        self.send_frame(stream, Opcode::KEY, &payload).await
     }
 
     async fn send_frame<S>(
@@ -1097,6 +1190,12 @@ impl<const N: usize, const MAX_STR: usize, const MAX_RESPONSE: usize>
             }
         }
     }
+
+    fn key_count(&self) -> u16 {
+        self.keys.iter().fold(0u16, |max_keyref, key| {
+            max_keyref.max(key.keyref().saturating_add(1))
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1126,11 +1225,12 @@ enum IncomingRequest<'a> {
 #[doc(hidden)]
 pub trait ErasedKey: Sync {
     fn keyref(&self) -> u16;
+    fn keyflags(&self) -> u8;
+    fn name(&self) -> &'static str;
     fn readable(&self) -> bool;
     fn writable(&self) -> bool;
     fn observable(&self) -> bool;
     fn generation(&self) -> u32;
-    fn encode_key_payload(&self, buffer: &mut [u8]) -> usize;
     fn encode_current_value(&self, buffer: &mut [u8]) -> Result<usize, WireValueError>;
     fn write_and_encode(
         &self,
@@ -1148,6 +1248,14 @@ where
         self.keyref
     }
 
+    fn keyflags(&self) -> u8 {
+        PERM.flags_bits()
+    }
+
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
     fn readable(&self) -> bool {
         PERM.readable()
     }
@@ -1162,10 +1270,6 @@ where
 
     fn generation(&self) -> u32 {
         self.generation()
-    }
-
-    fn encode_key_payload(&self, buffer: &mut [u8]) -> usize {
-        self.encode_key_payload(buffer)
     }
 
     fn encode_current_value(&self, buffer: &mut [u8]) -> Result<usize, WireValueError> {
@@ -1187,7 +1291,7 @@ where
 
 #[doc(hidden)]
 pub mod __private {
-    use super::{BASE_CAPS, DEFAULT_NODE_ID, Key, OBSERVABLE_CAPS, Perm, QupValue};
+    use super::{DEFAULT_NODE_ID, Key, Perm, QupValue};
 
     pub use super::ErasedKey;
 
@@ -1197,14 +1301,6 @@ pub mod __private {
 
     pub const fn str16_wire_len(value: &str) -> usize {
         2 + value.len()
-    }
-
-    pub const fn caps_wire_len(has_observable: bool) -> usize {
-        str16_wire_len(if has_observable {
-            OBSERVABLE_CAPS
-        } else {
-            BASE_CAPS
-        })
     }
 
     pub const fn max_usize(values: &[usize]) -> usize {
@@ -1293,7 +1389,7 @@ macro_rules! run {
     ($stream:expr, [$($key:expr),* $(,)?]) => {
         $crate::run!($stream, $crate::__private::default_node_id(), [$($key),*])
     };
-    ($stream:expr, $node_id:expr, [$($key:expr),* $(,)?]) => {{
+    ($stream:expr, $node_id:expr, [$($key:expr),* $(,)?] $(,)?) => {{
         const __QUP_MAX_VALUE: usize = $crate::__private::max_usize(&[
             0usize,
             $($crate::__private::key_wire_len($key)),*
@@ -1302,23 +1398,12 @@ macro_rules! run {
             0usize,
             $($crate::__private::key_max_string_len($key)),*
         ]);
-        const __QUP_MAX_KEY: usize = $crate::__private::max_usize(&[
-            0usize,
-            $($crate::__private::key_key_payload_len($key)),*
-        ]);
-        const __QUP_COUNT: u16 = $crate::__private::max_u16(&[
-            0u16,
-            $($crate::__private::key_keyref($key).wrapping_add(1)),*
-        ]);
         const __QUP_HAS_OBSERVABLE: bool = $crate::__private::any(&[
             false,
             $($crate::__private::key_observable($key)),*
         ]);
         const __QUP_MAX_RESPONSE: usize = $crate::__private::max_usize(&[
             __QUP_MAX_VALUE,
-            __QUP_MAX_KEY,
-            $crate::__private::str16_wire_len($node_id),
-            $crate::__private::caps_wire_len(__QUP_HAS_OBSERVABLE),
             2usize,
             1usize,
         ]);
@@ -1328,14 +1413,13 @@ macro_rules! run {
             __QUP_MAX_STR,
             __QUP_MAX_RESPONSE,
         > = $crate::Server::new(
-            $node_id,
-            __QUP_COUNT,
             __QUP_HAS_OBSERVABLE,
             [$( $crate::__private::erased_key($key) ),*],
         );
 
         let mut __qup_stream = $stream;
-        __QUP_SERVER.run(&mut __qup_stream).await
+        let __qup_node_id = $node_id;
+        __QUP_SERVER.run(&mut __qup_stream, __qup_node_id).await
     }};
 }
 
@@ -1370,15 +1454,40 @@ fn decode_wire_string(bytes: &[u8]) -> Result<&str, PayloadError> {
     str::from_utf8(bytes).map_err(PayloadError::InvalidUtf8)
 }
 
-fn encode_str16_into(value: &str, buffer: &mut [u8]) -> usize {
-    let len = u16::try_from(value.len()).expect("QUP str16 exceeded u16 length");
-    write_exact(buffer, &len.to_be_bytes());
-    write_exact(&mut buffer[2..2 + value.len()], value.as_bytes());
-    2 + value.len()
+fn validate_wire_string(value: &str) -> Result<(), &'static str> {
+    if value.len() > u16::MAX as usize {
+        return Err("node ID exceeds QUP str16 wire length");
+    }
+
+    if value.as_bytes().contains(&0x00) {
+        return Err("node ID contains NUL byte");
+    }
+
+    Ok(())
 }
 
 fn write_exact(dst: &mut [u8], src: &[u8]) {
     dst[..src.len()].copy_from_slice(src);
+}
+
+fn compute_segmented_checksum(opcode: Opcode, payload_segments: &[&[u8]]) -> u8 {
+    let payload_len = payload_segments
+        .iter()
+        .fold(0usize, |acc, segment| acc + segment.len());
+    let payload_len = u16::try_from(payload_len).expect("QUP payload exceeded u16 wire length");
+    let [len_hi, len_lo] = payload_len.to_be_bytes();
+
+    let mut acc = opcode.as_u8();
+    acc = acc.wrapping_add(len_hi);
+    acc = acc.wrapping_add(len_lo);
+
+    for segment in payload_segments {
+        for byte in *segment {
+            acc = acc.wrapping_add(*byte);
+        }
+    }
+
+    0u8.wrapping_sub(acc)
 }
 
 async fn read_exact_tracked<S>(
@@ -1511,5 +1620,53 @@ impl Utf8StreamValidator {
             Ok(_) => Ok(()),
             Err(error) => Err(PayloadError::InvalidUtf8(error)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::future::ready;
+
+    use heapless::String as HeaplessString;
+
+    use super::{Key, Perm};
+
+    static TEST_KEY: Key<i64, { Perm::RN }> = Key::new("voltage", 0);
+
+    struct NoopTransport;
+
+    impl qup_core::AsyncByteRead for NoopTransport {
+        type Error = ();
+
+        fn read_exact(
+            &mut self,
+            _buf: &mut [u8],
+        ) -> impl core::future::Future<Output = Result<(), Self::Error>> {
+            ready(Ok(()))
+        }
+    }
+
+    impl qup_core::AsyncByteWrite for NoopTransport {
+        type Error = ();
+
+        fn write_all(
+            &mut self,
+            _buf: &[u8],
+        ) -> impl core::future::Future<Output = Result<(), Self::Error>> {
+            ready(Ok(()))
+        }
+    }
+
+    #[test]
+    fn run_macro_accepts_runtime_node_id_expression() {
+        let mut node_id = HeaplessString::<32>::new();
+        node_id
+            .push_str("runtime-node-id")
+            .expect("test node ID should fit in the heapless string");
+
+        let _future = async move {
+            let transport = NoopTransport;
+            let _ = crate::run!(transport, node_id, [&TEST_KEY],);
+        };
     }
 }
