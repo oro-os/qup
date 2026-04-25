@@ -81,7 +81,9 @@ async fn run_connection(
                 .await
                 .map_err(|error| format!("observe {} failed: {error}", row.info.name))?;
             enqueue_changed_keys(&mut pending_changed, changed.as_slice());
-        } else if row.info.keyflags.is_readable() {
+        }
+
+        if row.info.keyflags.is_readable() {
             let (value, changed) = read_value_with_changes(&mut client, row.info.keyref)
                 .await
                 .map_err(|error| format!("initial read {} failed: {error}", row.info.name))?;
